@@ -1,0 +1,19 @@
+[project]
+name = "QriBot"
+version = "0.1.0"
+description = "QriBot"
+readme = "README.md"
+requires-python = ">=3.9, <4.0"
+dependencies = [
+    "nonebot2",
+    "nonebot-adapter-onebot",
+    "openai>=2.6.0"
+]
+
+[tool.nonebot]
+adapters = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+plugins = ["nonebot_plugin_htmlkit"]
+plugin_dirs = []
+builtin_plugins = ["echo"]
