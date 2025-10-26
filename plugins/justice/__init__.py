@@ -90,29 +90,33 @@ async def handle_justice_command(bot: Bot, event):
     print("=" * 50)
 
     user_id = event.user_id
-    message_text = event.get_plaintext()
     message_id = event.message_id
     
     # 判断消息来源
     is_group = isinstance(event, GroupMessageEvent)
     if is_group:
-        print(f"收到来自群 {event.group_id} 中用户 {user_id} 的消息:")
+        print(f"收到来自群 {event.group_id} 中用户 {user_id} 的justice请求")
     else:
-        print(f"收到来自用户 {user_id} 的私聊消息:")
+        print(f"收到来自用户 {user_id} 的justice请求")
     
     print(f"消息ID: {message_id}")
-    print(f"消息内容: {message_text}")
-    print(f"完整消息: {event.message}")
     
     try:
         if not (hasattr(event, 'reply') and event.reply
                 and len(event.reply.message) > 0 and event.reply.message[0].type == "forward"):
             message = "请回复一条合并转发的消息\n如果超过100条 可以嵌套合并转发"
             if is_group:
-                await bot.send_group_msg(group_id=event.group_id, message=message)
+                await bot.send_group_msg(group_id=event.group_id, message=message, reply_message_id=message_id)
             else:
                 await bot.send_private_msg(user_id=user_id, message=message)
             return
+        
+        # 先发送提示消息
+        tip_message = "LLM中, 请稍候\n(如果生成失败也会有回复)"
+        if is_group:
+            await bot.send_group_msg(group_id=event.group_id, message=tip_message, reply_message_id=message_id)
+        else:
+            await bot.send_private_msg(user_id=user_id, message=tip_message)
 
         forward_content = event.reply.message[0].data.get("content")
         replyCombineForwardMessages = extractListMessage(forward_content)
@@ -157,21 +161,21 @@ async def handle_justice_command(bot: Bot, event):
 
                 # 根据消息来源发送结果,并回复触发命令的消息
                 if is_group:
-                    await bot.send_group_msg(group_id=event.group_id, message=message)
+                    await bot.send_group_msg(group_id=event.group_id, message=message, reply_message_id=message_id)
                 else:
                     await bot.send_private_msg(user_id=user_id, message=message)
             except Exception as pic_error:
                 print(f"生成图片时发生错误: {pic_error}")
                 # 如果图片生成失败,发送纯文本
                 if is_group:
-                    await bot.send_group_msg(group_id=event.group_id, message=llm_result)
+                    await bot.send_group_msg(group_id=event.group_id, message=llm_result, reply_message_id=message_id)
                 else:
                     await bot.send_private_msg(user_id=user_id, message=llm_result)
         except Exception as llm_error:
             print(f"调用 LLM 时发生错误: {llm_error}")
             error_msg = f"调用 LLM 时发生错误!"
             if is_group:
-                await bot.send_group_msg(group_id=event.group_id, message=error_msg)
+                await bot.send_group_msg(group_id=event.group_id, message=error_msg, reply_message_id=message_id)
             else:
                 await bot.send_private_msg(user_id=user_id, message=error_msg)
     except Exception as e:
