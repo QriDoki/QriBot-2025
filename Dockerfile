@@ -24,7 +24,7 @@ COPY fonts.conf /etc/fonts/local.conf
 RUN fc-cache -fv
 
 # 复制项目文件
-COPY pyproject.toml README.md ./
+COPY pyproject.toml ./
 COPY bot.py ./
 COPY plugins/ ./plugins/
 COPY assets/ ./assets/
