@@ -20,6 +20,7 @@ COPY pyproject.toml README.md ./
 COPY bot.py ./
 COPY plugins/ ./plugins/
 COPY assets/ ./assets/
+COPY .env.prod ./
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -e .

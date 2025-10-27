@@ -7,28 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: qribot
     restart: unless-stopped
-    
-    # 环境变量配置
-    environment:
-      # NoneBot 配置
-      - ENVIRONMENT=production
-      - LOG_LEVEL=INFO
-      
-      # Fontconfig 配置 - 使用 MiSans 字体
-      - FONTCONFIG_PATH=/etc/fonts
-      - FC_LANG=zh_CN
-      
-      # OpenAI 配置 (请根据实际情况修改)
-      # - OPENAI_API_KEY=your_api_key_here
-      # - OPENAI_API_BASE=https://api.openai.com/v1
-      # - OPENAI_MODEL=gpt-3.5-turbo
-      
-      # 白名单配置 (请根据实际情况修改)
-      # - JUSTICE_USER_ID_ALLOW_LIST=[123456, 789012]
-    
     # 也可以使用 .env 文件
     env_file:
-      - .env
+      - .env.prod
     
     # 数据持久化 (如果需要)
     volumes:
