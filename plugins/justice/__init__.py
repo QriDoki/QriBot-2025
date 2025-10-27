@@ -15,7 +15,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 require("nonebot_plugin_htmlkit")
-from nonebot_plugin_htmlkit import md_to_pic
+from nonebot_plugin_htmlkit import md_to_pic, html_to_pic
 
 # 定义插件配置模型
 class PluginConfig(BaseModel):
@@ -138,6 +138,43 @@ async def handle_justice_command(bot: Bot, event):
                     await justice_cmd.send(message=message)
             except Exception as e:
                 print(f"处理 --prompts 参数时发生错误: {e}")
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text(f"处理失败: {e}")
+                await justice_cmd.send(message=message)
+            print("=" * 50)
+            return
+
+        # 检查 --test-html 参数
+        if "--test-html" in message_text:
+            print("检测到 --test-html 参数，读取并转换 test.html")
+            try:
+                test_html_path = PLUGIN_DIR / "prompts" / "test.html"
+                if not test_html_path.exists():
+                    message = MessageSegment.reply(event.message_id)
+                    message += MessageSegment.text("未找到 test.html 文件")
+                    await justice_cmd.send(message=message)
+                    return
+                
+                # 读取 HTML 文件内容
+                with open(test_html_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                
+                # 将 HTML 转换为图片
+                try:
+                    pic96 = await html_to_pic(html=html_content, max_width=800)
+                    pic220 = await html_to_pic(html=html_content, max_width=800, dpi=220)
+                    message = MessageSegment.reply(event.message_id)
+                    message += MessageSegment.text("test.html 渲染结果:\n")
+                    message += MessageSegment.image(pic220)
+                    message += MessageSegment.image(pic96)
+                    await justice_cmd.send(message=message)
+                except Exception as pic_error:
+                    print(f"生成图片时发生错误: {pic_error}")
+                    message = MessageSegment.reply(event.message_id)
+                    message += MessageSegment.text(f"生成图片失败: {pic_error}")
+                    await justice_cmd.send(message=message)
+            except Exception as e:
+                print(f"处理 --test-html 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
                 await justice_cmd.send(message=message)
