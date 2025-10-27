@@ -9,8 +9,16 @@ RUN apt-get update && \
     fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
+# 创建字体目录
+RUN mkdir -p /usr/share/fonts/truetype/misans && \
+    mkdir -p /usr/share/fonts/truetype/noto
+
 # 复制字体文件到系统字体目录
 COPY assets/MiSans-Normal.ttf /usr/share/fonts/truetype/misans/
+COPY assets/NotoColorEmoji-Regular.ttf /usr/share/fonts/truetype/noto/
+
+# 复制 fontconfig 配置文件
+COPY fonts.conf /etc/fonts/local.conf
 
 # 更新字体缓存
 RUN fc-cache -fv
