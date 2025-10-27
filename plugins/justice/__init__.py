@@ -103,23 +103,18 @@ async def handle_justice_command(bot: Bot, event):
     print(f"消息ID: {message_id}")
     
     try:
-        # 检查是否包含 --prompts 参数
+        # 检查是否包含 --prompts 或 --prompt=xxx 参数
         message_text = event.get_plaintext().strip()
         if "--prompts" in message_text:
             print("检测到 --prompts 参数，读取所有 prompt 文件")
-            
             try:
-                # 获取 prompts 目录下所有 .md 文件
                 prompts_dir = PLUGIN_DIR / "prompts"
                 md_files = sorted(prompts_dir.glob("*.md"))
-                
                 if not md_files:
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text("未找到任何 prompt 文件")
                     await justice_cmd.send(message=message)
                     return
-                
-                # 读取并拼接所有 .md 文件
                 combined_md = []
                 for md_file in md_files:
                     try:
@@ -129,11 +124,7 @@ async def handle_justice_command(bot: Bot, event):
                     except Exception as e:
                         print(f"读取文件 {md_file.name} 失败: {e}")
                         combined_md.append(f"## {md_file.name}\n\n读取失败: {e}")
-                
-                # 使用分隔线拼接所有内容
                 final_md = "\n\n---\n\n".join(combined_md)
-                
-                # 生成图片
                 try:
                     pic = await md_to_pic(md=final_md, max_width=800)
                     message = MessageSegment.reply(event.message_id)
@@ -142,20 +133,28 @@ async def handle_justice_command(bot: Bot, event):
                     await justice_cmd.send(message=message)
                 except Exception as pic_error:
                     print(f"生成图片时发生错误: {pic_error}")
-                    # 如果图片生成失败，发送纯文本
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件，但生成图片失败\n\n{final_md[:500]}...")
                     await justice_cmd.send(message=message)
-                
             except Exception as e:
                 print(f"处理 --prompts 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
                 await justice_cmd.send(message=message)
-            
             print("=" * 50)
             return
-        
+
+        # 检查 --prompt=xxx 参数
+        import re
+        prompt_match = re.search(r"--prompt=([\w\-\.]+)", message_text)
+        custom_prompt_path = None
+        if prompt_match:
+            prompt_name = prompt_match.group(1)
+            # 自动补全 .md 后缀
+            if not prompt_name.endswith(".md"):
+                prompt_name += ".md"
+            custom_prompt_path = PLUGIN_DIR / "prompts" / prompt_name
+
         if not (hasattr(event, 'reply') and event.reply
                 and len(event.reply.message) > 0 and event.reply.message[0].type == "forward"):
             message = MessageSegment.reply(event.message_id)
@@ -174,8 +173,18 @@ async def handle_justice_command(bot: Bot, event):
         # 使用换行符拼接并打印
         usersChatText = "\n".join(replyCombineForwardMessages)
 
-        # 加载系统 prompt
-        system_prompt = load_system_prompt()
+        # 加载 system prompt，优先使用 --prompt=xxx 指定的文件
+        def load_custom_or_default_prompt():
+            if custom_prompt_path and custom_prompt_path.exists():
+                try:
+                    with open(custom_prompt_path, "r", encoding="utf-8") as f:
+                        return f.read()
+                except Exception as e:
+                    print(f"读取自定义 prompt 失败: {e}")
+            # 默认
+            return load_system_prompt()
+
+        system_prompt = load_custom_or_default_prompt()
 
         # 调用 LLM 获取评价
         try:
