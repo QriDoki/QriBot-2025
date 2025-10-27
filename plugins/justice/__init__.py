@@ -161,7 +161,7 @@ async def handle_justice_command(bot: Bot, event):
                 
                 # 将 HTML 转换为图片
                 try:
-                    pic96 = await html_to_pic(html=html_content, max_width=1800)
+                    pic96 = await html_to_pic(html=html_content, max_width=800)
                     pic220 = await html_to_pic(html=html_content, max_width=1800, dpi=220)
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text("test.html 渲染结果:\n")
