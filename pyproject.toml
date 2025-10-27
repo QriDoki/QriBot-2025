@@ -15,3 +15,6 @@ dependencies = [
 adapters = [
     { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
 ]
+
+[tool.setuptools.packages.find]
+exclude = ["assets*"]
