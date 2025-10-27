@@ -6,6 +6,7 @@
 """
 from nonebot import on_message, on_command, require, get_driver
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent, GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11.event import Sender
 from nonebot.rule import Rule
 from openai import OpenAI
 import json
@@ -104,19 +105,15 @@ async def handle_justice_command(bot: Bot, event):
     try:
         if not (hasattr(event, 'reply') and event.reply
                 and len(event.reply.message) > 0 and event.reply.message[0].type == "forward"):
-            message = "请回复一条合并转发的消息\n如果超过100条 可以嵌套合并转发"
-            if is_group:
-                await bot.send_group_msg(group_id=event.group_id, message=message, reply_message_id=message_id)
-            else:
-                await bot.send_private_msg(user_id=user_id, message=message)
+            message = MessageSegment.reply(event.message_id)
+            message += MessageSegment.text("请回复一条合并转发的消息\n如果超过100条 可以嵌套合并转发")
+            await justice_cmd.send(message=message)
             return
         
         # 先发送提示消息
-        tip_message = "LLM中, 请稍候\n(如果生成失败也会有回复)"
-        if is_group:
-            await bot.send_group_msg(group_id=event.group_id, message=tip_message, reply_message_id=message_id)
-        else:
-            await bot.send_private_msg(user_id=user_id, message=tip_message)
+        message = MessageSegment.reply(event.message_id)
+        message += MessageSegment.text("LLM中, 请稍候\n(如果生成失败也会有回复)")
+        await justice_cmd.send(message=message)
 
         forward_content = event.reply.message[0].data.get("content")
         replyCombineForwardMessages = extractListMessage(forward_content)
@@ -154,30 +151,27 @@ async def handle_justice_command(bot: Bot, event):
                 vertical_pic = await md_to_pic(md=llm_result, max_width=400)
 
                 # 构建消息
-                message = MessageSegment.text("适合横屏阅读:\n")
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text("适合横屏阅读:\n")
                 message += MessageSegment.image(horizontal_pic)
                 message += MessageSegment.text("\n适合竖屏阅读:\n")
                 message += MessageSegment.image(vertical_pic)
+                message += MessageSegment.text("\n")
 
                 # 根据消息来源发送结果,并回复触发命令的消息
-                if is_group:
-                    await bot.send_group_msg(group_id=event.group_id, message=message, reply_message_id=message_id)
-                else:
-                    await bot.send_private_msg(user_id=user_id, message=message)
+                await justice_cmd.send(message=message)
             except Exception as pic_error:
                 print(f"生成图片时发生错误: {pic_error}")
                 # 如果图片生成失败,发送纯文本
-                if is_group:
-                    await bot.send_group_msg(group_id=event.group_id, message=llm_result, reply_message_id=message_id)
-                else:
-                    await bot.send_private_msg(user_id=user_id, message=llm_result)
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text(llm_result)
+                await justice_cmd.send(message=message)
+
         except Exception as llm_error:
             print(f"调用 LLM 时发生错误: {llm_error}")
-            error_msg = f"调用 LLM 时发生错误!"
-            if is_group:
-                await bot.send_group_msg(group_id=event.group_id, message=error_msg, reply_message_id=message_id)
-            else:
-                await bot.send_private_msg(user_id=user_id, message=error_msg)
+            error_msg = MessageSegment.reply(event.message_id)
+            error_msg += MessageSegment.text(f"调用 LLM 时发生错误!")
+            await justice_cmd.send(message=error_msg)
     except Exception as e:
         print(f"处理消息时发生错误: {e}")
     finally:

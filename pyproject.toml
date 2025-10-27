@@ -7,13 +7,12 @@ requires-python = ">=3.9, <4.0"
 dependencies = [
     "nonebot2",
     "nonebot-adapter-onebot",
-    "openai>=2.6.0"
+    "openai>=2.6.0",
+    "nonebot2[websockets]",
+    "nonebot_plugin_htmlkit"
 ]
 
 [tool.nonebot]
 adapters = [
     { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
 ]
-plugins = ["nonebot_plugin_htmlkit"]
-plugin_dirs = []
-builtin_plugins = ["echo"]
