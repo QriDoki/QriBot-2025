@@ -13,8 +13,7 @@ services:
     
     # 数据持久化 (如果需要)
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ./.env.prod:/app/.env.prod
     
     # 网络配置 (如果需要与其他服务通信)
     # networks:
