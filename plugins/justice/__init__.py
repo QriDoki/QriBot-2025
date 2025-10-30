@@ -127,7 +127,7 @@ async def handle_justice_command(bot: Bot, event):
                         combined_md.append(f"## {md_file.name}\n\n读取失败: {e}")
                 final_md = "\n\n---\n\n".join(combined_md)
                 try:
-                    pic = await md_to_pic(md=final_md, max_width=800)
+                    pic = await md_to_pic(md=final_md, max_width=1800, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件:\n")
                     message += MessageSegment.image(pic)
