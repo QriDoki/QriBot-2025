@@ -51,6 +51,7 @@ JUSTICE_USER_ID_ALLOW_LIST = plugin_config.justice_user_id_allow_list
 # 读取 prompt 模板
 PLUGIN_DIR = Path(__file__).parent
 PROMPT_TEMPLATE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
+EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
 
 def load_system_prompt() -> str:
     """加载系统 prompt"""
@@ -161,8 +162,8 @@ async def handle_justice_command(bot: Bot, event):
                 
                 # 将 HTML 转换为图片
                 try:
-                    pic96 = await html_to_pic(html=html_content, max_width=800)
                     pic220 = await html_to_pic(html=html_content, max_width=1800, dpi=220)
+                    pic96 = await html_to_pic(html=html_content, max_width=800)
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text("test.html 渲染结果:\n")
                     message += MessageSegment.image(pic220)
@@ -244,10 +245,10 @@ async def handle_justice_command(bot: Bot, event):
             # 生成横屏和竖屏两种格式的图片
             try:
                 # 横屏格式 - 适合横屏阅读 (宽度较大)
-                horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220)
+                horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
 
                 # 竖屏格式 - 适合竖屏阅读 (宽度较小)
-                vertical_pic = await md_to_pic(md=llm_result, max_width=900, dpi=220)
+                vertical_pic = await md_to_pic(md=llm_result, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
 
                 # 构建消息
                 message = MessageSegment.reply(event.message_id)
