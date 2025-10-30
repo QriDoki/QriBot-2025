@@ -8,7 +8,7 @@ dependencies = [
     "nonebot-adapter-onebot",
     "openai>=2.6.0",
     "nonebot2[websockets]",
-    "nonebot_plugin_htmlkit"
+    "nonebot_plugin_htmlkit>=0.1.0rc4"
 ]
 
 [tool.nonebot]

@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     fontconfig \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建字体目录
