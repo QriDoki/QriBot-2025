@@ -244,10 +244,10 @@ async def handle_justice_command(bot: Bot, event):
             # 生成横屏和竖屏两种格式的图片
             try:
                 # 横屏格式 - 适合横屏阅读 (宽度较大)
-                horizontal_pic = await md_to_pic(md=llm_result, max_width=800)
+                horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220)
 
                 # 竖屏格式 - 适合竖屏阅读 (宽度较小)
-                vertical_pic = await md_to_pic(md=llm_result, max_width=400)
+                vertical_pic = await md_to_pic(md=llm_result, max_width=900, dpi=220)
 
                 # 构建消息
                 message = MessageSegment.reply(event.message_id)
