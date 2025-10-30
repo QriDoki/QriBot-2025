@@ -15,6 +15,7 @@ services:
     volumes:
       - ./.env.prod:/app/.env.prod
       - ./plugins/justice/prompts/:/app/plugins/justice/prompts/
+      - ./logs:/app/logs
     # 网络配置 (如果需要与其他服务通信)
     # networks:
     #   - bot-network

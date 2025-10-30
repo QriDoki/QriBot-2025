@@ -23,6 +23,9 @@ COPY fonts.conf /etc/fonts/local.conf
 # 更新字体缓存
 RUN fc-cache -fv
 
+# 创建日志目录
+RUN mkdir -p /app/logs
+
 # 复制项目文件
 COPY pyproject.toml ./
 COPY bot.py ./

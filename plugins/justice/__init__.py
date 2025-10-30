@@ -4,7 +4,7 @@
 私聊消息日志插件
 监听特定用户的私聊消息并在控制台打印
 """
-from nonebot import on_message, on_command, require, get_driver
+from nonebot import on_message, on_command, require, get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent, GroupMessageEvent, MessageSegment
 from nonebot.adapters.onebot.v11.event import Sender
 from nonebot.rule import Rule
@@ -58,7 +58,7 @@ def load_system_prompt() -> str:
         with open(PROMPT_TEMPLATE_PATH, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
-        print(f"警告: 无法读取 prompt 模板文件: {e}")
+        logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件: {e}")
         return """你是一个公正的裁判,请客观地评价对话内容。"""
 
 
@@ -88,7 +88,7 @@ justice_cmd = on_command(
 @justice_cmd.handle()
 async def handle_justice_command(bot: Bot, event):
     """处理正义裁判命令"""
-    print("=" * 50)
+    logger.info("=" * 50)
 
     user_id = event.user_id
     message_id = event.message_id
@@ -96,17 +96,17 @@ async def handle_justice_command(bot: Bot, event):
     # 判断消息来源
     is_group = isinstance(event, GroupMessageEvent)
     if is_group:
-        print(f"收到来自群 {event.group_id} 中用户 {user_id} 的justice请求")
+        logger.info(f"收到来自群 {event.group_id} 中用户 {user_id} 的justice请求")
     else:
-        print(f"收到来自用户 {user_id} 的justice请求")
+        logger.info(f"收到来自用户 {user_id} 的justice请求")
     
-    print(f"消息ID: {message_id}")
+    logger.info(f"消息ID: {message_id}")
     
     try:
         # 检查是否包含 --prompts 或 --prompt=xxx 参数
         message_text = event.get_plaintext().strip()
         if "--prompts" in message_text:
-            print("检测到 --prompts 参数，读取所有 prompt 文件")
+            logger.info("检测到 --prompts 参数，读取所有 prompt 文件")
             try:
                 prompts_dir = PLUGIN_DIR / "prompts"
                 md_files = sorted(prompts_dir.glob("*.md"))
@@ -122,7 +122,7 @@ async def handle_justice_command(bot: Bot, event):
                             content = f.read()
                             combined_md.append(f"# {md_file.name}\n\n{content}")
                     except Exception as e:
-                        print(f"读取文件 {md_file.name} 失败: {e}")
+                        logger.opt(exception=True).error(f"读取文件 {md_file.name} 失败: {e}")
                         combined_md.append(f"## {md_file.name}\n\n读取失败: {e}")
                 final_md = "\n\n---\n\n".join(combined_md)
                 try:
@@ -132,21 +132,21 @@ async def handle_justice_command(bot: Bot, event):
                     message += MessageSegment.image(pic)
                     await justice_cmd.send(message=message)
                 except Exception as pic_error:
-                    print(f"生成图片时发生错误: {pic_error}")
+                    logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件，但生成图片失败\n\n{final_md[:500]}...")
                     await justice_cmd.send(message=message)
             except Exception as e:
-                print(f"处理 --prompts 参数时发生错误: {e}")
+                logger.opt(exception=True).error(f"处理 --prompts 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
                 await justice_cmd.send(message=message)
-            print("=" * 50)
+            logger.info("=" * 50)
             return
 
         # 检查 --test-html 参数
         if "--test-html" in message_text:
-            print("检测到 --test-html 参数，读取并转换 test.html")
+            logger.info("检测到 --test-html 参数，读取并转换 test.html")
             try:
                 test_html_path = PLUGIN_DIR / "prompts" / "test.html"
                 if not test_html_path.exists():
@@ -169,16 +169,16 @@ async def handle_justice_command(bot: Bot, event):
                     message += MessageSegment.image(pic96)
                     await justice_cmd.send(message=message)
                 except Exception as pic_error:
-                    print(f"生成图片时发生错误: {pic_error}")
+                    logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"生成图片失败: {pic_error}")
                     await justice_cmd.send(message=message)
             except Exception as e:
-                print(f"处理 --test-html 参数时发生错误: {e}")
+                logger.opt(exception=True).error(f"处理 --test-html 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
                 await justice_cmd.send(message=message)
-            print("=" * 50)
+            logger.info("=" * 50)
             return
 
         # 检查 --prompt=xxx 参数
@@ -217,7 +217,7 @@ async def handle_justice_command(bot: Bot, event):
                     with open(custom_prompt_path, "r", encoding="utf-8") as f:
                         return f.read()
                 except Exception as e:
-                    print(f"读取自定义 prompt 失败: {e}")
+                    logger.opt(exception=True).error(f"读取自定义 prompt 失败: {e}")
             # 默认
             return load_system_prompt()
 
@@ -239,7 +239,7 @@ async def handle_justice_command(bot: Bot, event):
             )
 
             llm_result = response.choices[0].message.content
-            print(f"LLM 评价结果: {llm_result}")
+            logger.success(f"LLM 评价结果: {llm_result}")
 
             # 生成横屏和竖屏两种格式的图片
             try:
@@ -260,21 +260,21 @@ async def handle_justice_command(bot: Bot, event):
                 # 根据消息来源发送结果,并回复触发命令的消息
                 await justice_cmd.send(message=message)
             except Exception as pic_error:
-                print(f"生成图片时发生错误: {pic_error}")
+                logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                 # 如果图片生成失败,发送纯文本
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(llm_result)
                 await justice_cmd.send(message=message)
 
         except Exception as llm_error:
-            print(f"调用 LLM 时发生错误: {llm_error}")
+            logger.opt(exception=True).error(f"调用 LLM 时发生错误: {llm_error}")
             error_msg = MessageSegment.reply(event.message_id)
             error_msg += MessageSegment.text(f"调用 LLM 时发生错误!")
             await justice_cmd.send(message=error_msg)
     except Exception as e:
-        print(f"处理消息时发生错误: {e}")
+        logger.opt(exception=True).error(f"处理消息时发生错误: {e}")
     finally:
-        print("=" * 50)
+        logger.info("=" * 50)
 
 def extractListMessage(messages: list) -> list:
     res = []
