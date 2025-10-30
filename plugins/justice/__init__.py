@@ -11,8 +11,10 @@ from nonebot.rule import Rule
 from openai import OpenAI
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from pydantic import BaseModel, Field
+import re
+import yaml
 
 require("nonebot_plugin_htmlkit")
 from nonebot_plugin_htmlkit import md_to_pic, html_to_pic
@@ -53,14 +55,87 @@ PLUGIN_DIR = Path(__file__).parent
 PROMPT_TEMPLATE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
 EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
 
+# 全局变量：alias -> 文件路径的映射字典
+PROMPT_ALIAS_MAP: Dict[str, str] = {}
+
+def parse_yaml_front_matter(file_path: Path) -> tuple[Optional[dict], str]:
+    """
+    解析 Markdown 文件的 YAML front matter
+    返回: (front_matter_dict, content_without_front_matter)
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # 匹配 YAML front matter (以 --- 开头和结尾)
+        pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
+        match = re.match(pattern, content, re.DOTALL)
+        
+        if match:
+            yaml_content = match.group(1)
+            markdown_content = match.group(2)
+            front_matter = yaml.safe_load(yaml_content)
+            return front_matter, markdown_content
+        else:
+            return None, content
+    except Exception as e:
+        logger.opt(exception=True).error(f"解析 YAML front matter 失败 ({file_path.name}): {e}")
+        return None, ""
+
+def load_prompt_aliases() -> Dict[str, str]:
+    """
+    加载所有 prompt 文件，构建 alias -> 文件路径的映射字典
+    也包含文件名(带/不带.md后缀)作为key
+    返回: {alias: file_path_str}
+    """
+    alias_map = {}
+    prompts_dir = PLUGIN_DIR / "prompts"
+    
+    if not prompts_dir.exists():
+        logger.warning(f"prompts 目录不存在: {prompts_dir}")
+        return alias_map
+    
+    md_files = sorted(prompts_dir.glob("*.md"))
+    for md_file in md_files:
+        try:
+            file_path_str = str(md_file)
+            file_name_with_ext = md_file.name
+            file_name_without_ext = md_file.stem
+
+            # 注册文件名 (带和不带后缀)
+            alias_map[file_name_with_ext] = file_path_str
+            alias_map[file_name_without_ext] = file_path_str
+            logger.info(f"注册文件名: '{file_name_with_ext}' & '{file_name_without_ext}' -> {file_name_with_ext}")
+
+            # 解析并注册 YAML front matter 中的 alias
+            front_matter, _ = parse_yaml_front_matter(md_file)
+            if front_matter and "alias" in front_matter:
+                aliases = front_matter["alias"]
+                if isinstance(aliases, list):
+                    for alias in aliases:
+                        if isinstance(alias, str):
+                            alias_map[alias] = file_path_str
+                            logger.info(f"注册 YAML alias: '{alias}' -> {md_file.name}")
+        except Exception as e:
+            logger.opt(exception=True).error(f"处理文件 {md_file.name} 时出错: {e}")
+    
+    logger.success(f"共加载 {len(alias_map)} 个 prompt alias (包含文件名)")
+    return alias_map
+
 def load_system_prompt() -> str:
     """加载系统 prompt"""
     try:
         with open(PROMPT_TEMPLATE_PATH, "r", encoding="utf-8") as f:
-            return f.read()
+            content = f.read()
+        # 移除 YAML front matter 后返回
+        _, markdown_content = parse_yaml_front_matter(PROMPT_TEMPLATE_PATH)
+        return markdown_content if markdown_content else content
     except Exception as e:
         logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件: {e}")
         return """你是一个公正的裁判,请客观地评价对话内容。"""
+
+# 在模块加载时构建 alias 映射
+PROMPT_ALIAS_MAP = load_prompt_aliases()
 
 
 
@@ -107,7 +182,12 @@ async def handle_justice_command(bot: Bot, event):
         # 检查是否包含 --prompts 或 --prompt=xxx 参数
         message_text = event.get_plaintext().strip()
         if "--prompts" in message_text:
-            logger.info("检测到 --prompts 参数，读取所有 prompt 文件")
+            logger.info("检测到 --prompts 参数，刷新并读取所有 prompt 文件")
+            
+            # 刷新 alias 映射
+            global PROMPT_ALIAS_MAP
+            PROMPT_ALIAS_MAP = load_prompt_aliases()
+
             try:
                 prompts_dir = PLUGIN_DIR / "prompts"
                 md_files = sorted(prompts_dir.glob("*.md"))
@@ -117,10 +197,20 @@ async def handle_justice_command(bot: Bot, event):
                     await justice_cmd.send(message=message)
                     return
                 combined_md = []
+                
+                # 添加 alias 映射信息到开头
+                if PROMPT_ALIAS_MAP:
+                    alias_info = ["# Prompt Alias 映射\n"]
+                    for alias, file_path in PROMPT_ALIAS_MAP.items():
+                        file_name = Path(file_path).name
+                        alias_info.append(f"- `{alias}` → `{file_name}`")
+                    combined_md.append("\n".join(alias_info))
+                
                 for md_file in md_files:
                     try:
                         with open(md_file, "r", encoding="utf-8") as f:
                             content = f.read()
+                            # 为每个文件添加标题和内容
                             combined_md.append(f"# {md_file.name}\n\n{content}")
                     except Exception as e:
                         logger.opt(exception=True).error(f"读取文件 {md_file.name} 失败: {e}")
@@ -188,10 +278,16 @@ async def handle_justice_command(bot: Bot, event):
         custom_prompt_path = None
         if prompt_match:
             prompt_name = prompt_match.group(1)
-            # 自动补全 .md 后缀
-            if not prompt_name.endswith(".md"):
-                prompt_name += ".md"
-            custom_prompt_path = PLUGIN_DIR / "prompts" / prompt_name
+            # 从 alias map 中查找路径
+            if prompt_name in PROMPT_ALIAS_MAP:
+                custom_prompt_path = Path(PROMPT_ALIAS_MAP[prompt_name])
+                logger.info(f"通过 alias '{prompt_name}' 找到 prompt 文件: {custom_prompt_path.name}")
+            else:
+                # 兼容旧的逻辑,自动补全 .md 后缀
+                if not prompt_name.endswith(".md"):
+                    prompt_name += ".md"
+                custom_prompt_path = PLUGIN_DIR / "prompts" / prompt_name
+                logger.warning(f"在 alias map 中未找到 '{prompt_name}', 尝试直接拼接路径: {custom_prompt_path}")
 
         if not (hasattr(event, 'reply') and event.reply
                 and len(event.reply.message) > 0 and event.reply.message[0].type == "forward"):
@@ -211,18 +307,26 @@ async def handle_justice_command(bot: Bot, event):
         # 使用换行符拼接并打印
         usersChatText = "\n".join(replyCombineForwardMessages)
 
-        # 加载 system prompt，优先使用 --prompt=xxx 指定的文件
-        def load_custom_or_default_prompt():
-            if custom_prompt_path and custom_prompt_path.exists():
-                try:
-                    with open(custom_prompt_path, "r", encoding="utf-8") as f:
-                        return f.read()
-                except Exception as e:
-                    logger.opt(exception=True).error(f"读取自定义 prompt 失败: {e}")
-            # 默认
-            return load_system_prompt()
+        # --- 决定并加载 system prompt ---
+        prompt_to_use_path = PROMPT_TEMPLATE_PATH  # 默认
+        if custom_prompt_path and custom_prompt_path.exists():
+            prompt_to_use_path = custom_prompt_path
 
-        system_prompt = load_custom_or_default_prompt()
+        def load_prompt_content(path: Path) -> str:
+            """从指定路径加载并解析 prompt 内容"""
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                # 移除 YAML front matter 后返回
+                _, markdown_content = parse_yaml_front_matter(path)
+                return markdown_content if markdown_content else content
+            except Exception as e:
+                logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件({path.name}): {e}")
+                return """你是一个公正的裁判,请客观地评价对话内容。"""
+
+        system_prompt = load_prompt_content(prompt_to_use_path)
+        prompt_filename = prompt_to_use_path.name
+        logger.info(f"使用 prompt 文件: {prompt_filename}")
 
         # 调用 LLM 获取评价
         try:
@@ -245,18 +349,18 @@ async def handle_justice_command(bot: Bot, event):
             # 生成横屏和竖屏两种格式的图片
             try:
                 # 横屏格式 - 适合横屏阅读 (宽度较大)
-                horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
+                # horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
 
                 # 竖屏格式 - 适合竖屏阅读 (宽度较小)
                 vertical_pic = await md_to_pic(md=llm_result, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
 
                 # 构建消息
                 message = MessageSegment.reply(event.message_id)
-                message += MessageSegment.text("适合横屏阅读:\n")
-                message += MessageSegment.image(horizontal_pic)
-                message += MessageSegment.text("\n适合竖屏阅读:\n")
+                # message += MessageSegment.text("适合横屏阅读:\n")
+                # message += MessageSegment.image(horizontal_pic)
+                # message += MessageSegment.text("\n适合竖屏阅读:\n")
+                message += MessageSegment.text(f"\n使用prompt文件: {prompt_filename}\n")
                 message += MessageSegment.image(vertical_pic)
-                message += MessageSegment.text("\n")
 
                 # 根据消息来源发送结果,并回复触发命令的消息
                 await justice_cmd.send(message=message)
@@ -265,6 +369,7 @@ async def handle_justice_command(bot: Bot, event):
                 # 如果图片生成失败,发送纯文本
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(llm_result)
+                message += MessageSegment.text(f"\n(prompt: {prompt_filename})")
                 await justice_cmd.send(message=message)
 
         except Exception as llm_error:
