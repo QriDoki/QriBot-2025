@@ -198,20 +198,23 @@ async def handle_justice_command(bot: Bot, event):
                     return
                 combined_md = []
                 
-                # 添加 alias 映射信息到开头
-                if PROMPT_ALIAS_MAP:
-                    alias_info = ["# Prompt Alias 映射\n"]
-                    for alias, file_path in PROMPT_ALIAS_MAP.items():
-                        file_name = Path(file_path).name
-                        alias_info.append(f"- `{alias}` → `{file_name}`")
-                    combined_md.append("\n".join(alias_info))
-                
                 for md_file in md_files:
                     try:
+                        # 反查当前文件的所有 alias
+                        aliases_for_file = [
+                            f"`{alias}`" for alias, path in PROMPT_ALIAS_MAP.items()
+                            if Path(path).name == md_file.name and alias != md_file.name and alias != md_file.stem
+                        ]
+                        
+                        alias_display_str = ""
+                        if aliases_for_file:
+                            alias_display_str = f"**Aliases:** {' '.join(aliases_for_file)}\n\n"
+
                         with open(md_file, "r", encoding="utf-8") as f:
                             content = f.read()
-                            # 为每个文件添加标题和内容
-                            combined_md.append(f"# {md_file.name}\n\n{content}")
+                        
+                        # 为每个文件添加标题、别名和内容
+                        combined_md.append(f"# {md_file.name}\n\n{alias_display_str}{content}")
                     except Exception as e:
                         logger.opt(exception=True).error(f"读取文件 {md_file.name} 失败: {e}")
                         combined_md.append(f"## {md_file.name}\n\n读取失败: {e}")
