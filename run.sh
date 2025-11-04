@@ -1,0 +1,1 @@
+export HTTPS_PROXY=http://192.168.3.1:7890 && export HTTP_PROXY=http://192.168.3.1:7890 && git pull && docker compose build && docker compose stop && docker compose down && docker compose up -d && docker compose logs --tail 200 -f
