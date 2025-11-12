@@ -4,24 +4,33 @@
 私聊消息日志插件
 监听特定用户的私聊消息并在控制台打印
 """
-from xmlrpc.client import SYSTEM_ERROR
-
-from nonebot import on_message, on_command, require, get_driver, logger
+from nonebot import require, get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent, GroupMessageEvent, MessageSegment
-from nonebot.adapters.onebot.v11.event import Sender
-from nonebot.rule import Rule
 from openai import OpenAI
 import json
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional
 from pydantic import BaseModel, Field
 import re
-import yaml
-from nonebot.params import CommandStart, Command, RawCommand
+from nonebot.params import Command
 from typing import Annotated
 
 require("nonebot_plugin_htmlkit")
 from nonebot_plugin_htmlkit import md_to_pic, html_to_pic
+
+# 导入 prompts 模块
+from .prompts import (
+    PLUGIN_DIR,
+    PROMPT_ALIAS_MAP,
+    SYSTEM_PROMPT_ANA_PATH,
+    EMPTY_CSS_PATH,
+    parse_yaml_front_matter,
+    load_prompt_aliases,
+    load_prompt_content
+)
+
+# 导入 cmd_ana 模块
+from .cmd_ana import commandToPromptFilePath, create_forward_ana_cmd
 
 # 定义插件配置模型
 class PluginConfig(BaseModel):
@@ -54,95 +63,6 @@ plugin_config = PluginConfig.model_validate(driver.config.model_dump(), extra="a
 # 使用配置中的白名单
 ANA_USER_ID_ALLOW_LIST = plugin_config.ana_user_id_allow_list
 
-# 读取 prompt 模板
-PLUGIN_DIR = Path(__file__).parent
-SYSTEM_PROMPT_JUSTICE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
-SYSTEM_PROMPT_ANA_PATH = PLUGIN_DIR / "prompts" / "how_to_say.md"
-EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
-
-# 全局变量：alias -> 文件路径的映射字典
-PROMPT_ALIAS_MAP: Dict[str, str] = {}
-
-def parse_yaml_front_matter(file_path: Path) -> tuple[Optional[dict], str]:
-    """
-    解析 Markdown 文件的 YAML front matter
-    返回: (front_matter_dict, content_without_front_matter)
-    """
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # 匹配 YAML front matter (以 --- 开头和结尾)
-        pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
-        match = re.match(pattern, content, re.DOTALL)
-        
-        if match:
-            yaml_content = match.group(1)
-            markdown_content = match.group(2)
-            front_matter = yaml.safe_load(yaml_content)
-            return front_matter, markdown_content
-        else:
-            return None, content
-    except Exception as e:
-        logger.opt(exception=True).error(f"解析 YAML front matter 失败 ({file_path.name}): {e}")
-        return None, ""
-
-def load_prompt_aliases() -> Dict[str, str]:
-    """
-    加载所有 prompt 文件，构建 alias -> 文件路径的映射字典
-    也包含文件名(带/不带.md后缀)作为key
-    返回: {alias: file_path_str}
-    """
-    alias_map = {}
-    prompts_dir = PLUGIN_DIR / "prompts"
-    
-    if not prompts_dir.exists():
-        logger.warning(f"prompts 目录不存在: {prompts_dir}")
-        return alias_map
-    
-    md_files = sorted(prompts_dir.glob("*.md"))
-    for md_file in md_files:
-        try:
-            file_path_str = str(md_file)
-            file_name_with_ext = md_file.name
-            file_name_without_ext = md_file.stem
-
-            # 注册文件名 (带和不带后缀)
-            alias_map[file_name_with_ext] = file_path_str
-            alias_map[file_name_without_ext] = file_path_str
-            logger.info(f"注册文件名: '{file_name_with_ext}' & '{file_name_without_ext}' -> {file_name_with_ext}")
-
-            # 解析并注册 YAML front matter 中的 alias
-            front_matter, _ = parse_yaml_front_matter(md_file)
-            if front_matter and "alias" in front_matter:
-                aliases = front_matter["alias"]
-                if isinstance(aliases, list):
-                    for alias in aliases:
-                        if isinstance(alias, str):
-                            alias_map[alias] = file_path_str
-                            logger.info(f"注册 YAML alias: '{alias}' -> {md_file.name}")
-        except Exception as e:
-            logger.opt(exception=True).error(f"处理文件 {md_file.name} 时出错: {e}")
-    
-    logger.success(f"共加载 {len(alias_map)} 个 prompt alias (包含文件名)")
-    return alias_map
-
-def load_system_prompt() -> str:
-    """加载系统 prompt"""
-    try:
-        with open(SYSTEM_PROMPT_JUSTICE_PATH, "r", encoding="utf-8") as f:
-            content = f.read()
-        # 移除 YAML front matter 后返回
-        _, markdown_content = parse_yaml_front_matter(SYSTEM_PROMPT_JUSTICE_PATH)
-        return markdown_content if markdown_content else content
-    except Exception as e:
-        logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件: {e}")
-        return """你是一个公正的裁判,请客观地评价对话内容。"""
-
-# 在模块加载时构建 alias 映射
-PROMPT_ALIAS_MAP = load_prompt_aliases()
-
-
 
 def check_user_permission(event) -> bool:
     """检查用户是否在白名单中"""
@@ -155,49 +75,9 @@ def check_user_permission(event) -> bool:
         return user_id in ANA_USER_ID_ALLOW_LIST
     return False
 
-triggers = {
-    "justice": {
-        "promptFilePath": SYSTEM_PROMPT_JUSTICE_PATH,
-        "aliases": ["蜻蜓队长", "正义", "天降正义", "裁判"]
-    },
-    "ana": {
-        "promptFilePath": SYSTEM_PROMPT_ANA_PATH,
-        "aliases": ["analyse", "分析", "怎么说", "如何评价"]
-    }
-}
-
-# 从 triggers 字典中收集所有别名
-def get_all_aliases() -> set[str]:
-    """从 triggers 字典中收集所有别名(包括 key 和 aliases)"""
-    all_aliases = set()
-    for trigger_key, trigger_config in triggers.items():
-        all_aliases.add(trigger_key)  # 添加 key
-        all_aliases.update(trigger_config["aliases"])  # 添加 aliases
-    return all_aliases
-
-# 从 triggers 生成命令到 prompt 文件路径的映射
-def build_command_to_prompt_map() -> Dict[str, Path]:
-    """从 triggers 字典生成命令到 prompt 文件路径的映射"""
-    command_map = {}
-    for trigger_key, trigger_config in triggers.items():
-        prompt_file_path = trigger_config["promptFilePath"]
-        # 将 key 映射到 prompt 文件路径
-        command_map[trigger_key] = prompt_file_path
-        # 将所有 aliases 也映射到同一个 prompt 文件路径
-        for alias in trigger_config["aliases"]:
-            command_map[alias] = prompt_file_path
-    return command_map
-
-commandToPromptFilePath = build_command_to_prompt_map()
 
 # 创建命令处理器,响应白名单用户的私聊和群聊消息
-forward_ana_cmd = on_command(
-    "ana",
-    aliases=get_all_aliases(),
-    rule=Rule(check_user_permission),
-    priority=1,
-    block=False  # 不阻断消息传递,让其他插件也能处理
-)
+forward_ana_cmd = create_forward_ana_cmd(check_user_permission, plugin_config)
 
 
 @forward_ana_cmd.handle()
@@ -226,8 +106,8 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
             logger.info("检测到 --prompts 参数，刷新并读取所有 prompt 文件")
             
             # 刷新 alias 映射
-            global PROMPT_ALIAS_MAP
-            PROMPT_ALIAS_MAP = load_prompt_aliases()
+            from . import prompts
+            prompts.PROMPT_ALIAS_MAP = load_prompt_aliases()
 
             try:
                 prompts_dir = PLUGIN_DIR / "prompts"
@@ -307,14 +187,14 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
             return
 
         # 检查 --prompt=xxx 参数
-        import re
         prompt_match = re.search(r"--prompt=([\w\-\.]+)", message_text)
         custom_prompt_path = None
         if prompt_match:
             prompt_name = prompt_match.group(1)
-            # 从 alias map 中查找路径
-            if prompt_name in PROMPT_ALIAS_MAP:
-                custom_prompt_path = Path(PROMPT_ALIAS_MAP[prompt_name])
+            # 从 prompts 模块的 alias map 中查找路径
+            from . import prompts
+            if prompt_name in prompts.PROMPT_ALIAS_MAP:
+                custom_prompt_path = Path(prompts.PROMPT_ALIAS_MAP[prompt_name])
                 logger.info(f"通过 alias '{prompt_name}' 找到 prompt 文件: {custom_prompt_path.name}")
             else:
                 # 兼容旧的逻辑,自动补全 .md 后缀
@@ -342,18 +222,6 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
             # 兜底使用默认 prompt
             prompt_to_use_path = SYSTEM_PROMPT_ANA_PATH
             logger.warning(f"触发命令 '{trigger}' 未在 commandToPromptFilePath 中找到,使用默认 prompt")
-
-        def load_prompt_content(path: Path) -> str:
-            """从指定路径加载并解析 prompt 内容"""
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                # 移除 YAML front matter 后返回
-                _, markdown_content = parse_yaml_front_matter(path)
-                return markdown_content if markdown_content else content
-            except Exception as e:
-                logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件({path.name}): {e}")
-                return """你是一个公正的裁判,请客观地评价对话内容。"""
 
         system_prompt = load_prompt_content(prompt_to_use_path)
         prompt_filename = prompt_to_use_path.name
@@ -433,18 +301,6 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
     finally:
         logger.info("=" * 50)
 
-# def extractListMessage(messages: list) -> list:
-#     res = []
-#
-#     for i in messages:
-#         upperSender = i["sender"]["nickname"]
-#         for message in i["message"]:
-#             messageType = message["type"]
-#             if messageType == "forward":
-#                 res.extend(extractListMessage(message["data"]["content"]))
-#             if messageType == "text":
-#                 res.append(f"{upperSender}: {message['data']['text']}")
-#     return res
 
 def messageToSimple(messages: list) -> list:
     res = []
@@ -458,38 +314,3 @@ def messageToSimple(messages: list) -> list:
             if messageType == "text":
                 res.append(f"{upperSender}: {message['data']['text']}")
     return res
-
-
-# # 创建消息处理器，只响应特定用户的私聊消息
-# private_msg_logger = on_message(
-#     rule=Rule(check_user_permission),
-#     priority=1,
-#     block=False  # 不阻断消息传递，让其他插件也能处理
-# )
-#
-# @private_msg_logger.handle()
-# async def handle_private_message(bot: Bot, event: PrivateMessageEvent):
-#     messagePlain = await extractMessage(bot, event, event.message)
-#     """处理私聊消息"""
-#     print("=" * 50)
-#     user_id = event.user_id
-#     message_text = event.get_plaintext()
-#     message_id = event.message_id
-#
-#     print(f"[私聊消息] 来自用户 {user_id} 的消息:")
-#     print(f"消息ID: {message_id}")
-#     print(f"消息内容: {message_text}")
-#     print(f"完整消息: {event.message}")
-#     print("=" * 50)
-#
-#
-# async def extractMessage(bot: Bot, event: PrivateMessageEvent | GroupMessageEvent, messages: [MessageSegment]):
-#     res = []
-#     for msg in messages:
-#         messageType = msg.type if hasattr(msg, 'type') else msg["type"]
-#         if messageType == "forward":
-#             forwardMsg = await bot.get_forward_msg(id=msg.data["id"])
-#             res.extend(extractListMessage(forwardMsg["messages"]))
-#         if messageType == "text":
-#             res.append(event.sender.nickname + ": " + msg.data["text"])
-#     return res
