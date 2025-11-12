@@ -57,7 +57,7 @@ ANA_USER_ID_ALLOW_LIST = plugin_config.ana_user_id_allow_list
 # 读取 prompt 模板
 PLUGIN_DIR = Path(__file__).parent
 SYSTEM_PROMPT_JUSTICE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
-SYSTEM_PROMPT_ANA_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
+SYSTEM_PROMPT_ANA_PATH = PLUGIN_DIR / "prompts" / "how_to_say.md"
 EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
 
 # 全局变量：alias -> 文件路径的映射字典
