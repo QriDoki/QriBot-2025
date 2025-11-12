@@ -4,6 +4,8 @@
 私聊消息日志插件
 监听特定用户的私聊消息并在控制台打印
 """
+from xmlrpc.client import SYSTEM_ERROR
+
 from nonebot import on_message, on_command, require, get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent, GroupMessageEvent, MessageSegment
 from nonebot.adapters.onebot.v11.event import Sender
@@ -15,6 +17,8 @@ from typing import Optional, Dict
 from pydantic import BaseModel, Field
 import re
 import yaml
+from nonebot.params import CommandStart, Command, RawCommand
+from typing import Annotated
 
 require("nonebot_plugin_htmlkit")
 from nonebot_plugin_htmlkit import md_to_pic, html_to_pic
@@ -52,7 +56,8 @@ ANA_USER_ID_ALLOW_LIST = plugin_config.ana_user_id_allow_list
 
 # 读取 prompt 模板
 PLUGIN_DIR = Path(__file__).parent
-PROMPT_TEMPLATE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
+SYSTEM_PROMPT_JUSTICE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
+SYSTEM_PROMPT_ANA_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
 EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
 
 # 全局变量：alias -> 文件路径的映射字典
@@ -125,10 +130,10 @@ def load_prompt_aliases() -> Dict[str, str]:
 def load_system_prompt() -> str:
     """加载系统 prompt"""
     try:
-        with open(PROMPT_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        with open(SYSTEM_PROMPT_JUSTICE_PATH, "r", encoding="utf-8") as f:
             content = f.read()
         # 移除 YAML front matter 后返回
-        _, markdown_content = parse_yaml_front_matter(PROMPT_TEMPLATE_PATH)
+        _, markdown_content = parse_yaml_front_matter(SYSTEM_PROMPT_JUSTICE_PATH)
         return markdown_content if markdown_content else content
     except Exception as e:
         logger.opt(exception=True).error(f"警告: 无法读取 prompt 模板文件: {e}")
@@ -150,11 +155,45 @@ def check_user_permission(event) -> bool:
         return user_id in ANA_USER_ID_ALLOW_LIST
     return False
 
+triggers = {
+    "justice": {
+        "promptFilePath": SYSTEM_PROMPT_JUSTICE_PATH,
+        "aliases": ["蜻蜓队长", "正义", "天降正义", "裁判"]
+    },
+    "ana": {
+        "promptFilePath": SYSTEM_PROMPT_ANA_PATH,
+        "aliases": ["analyse", "分析", "怎么说", "如何评价"]
+    }
+}
+
+# 从 triggers 字典中收集所有别名
+def get_all_aliases() -> set[str]:
+    """从 triggers 字典中收集所有别名(包括 key 和 aliases)"""
+    all_aliases = set()
+    for trigger_key, trigger_config in triggers.items():
+        all_aliases.add(trigger_key)  # 添加 key
+        all_aliases.update(trigger_config["aliases"])  # 添加 aliases
+    return all_aliases
+
+# 从 triggers 生成命令到 prompt 文件路径的映射
+def build_command_to_prompt_map() -> Dict[str, Path]:
+    """从 triggers 字典生成命令到 prompt 文件路径的映射"""
+    command_map = {}
+    for trigger_key, trigger_config in triggers.items():
+        prompt_file_path = trigger_config["promptFilePath"]
+        # 将 key 映射到 prompt 文件路径
+        command_map[trigger_key] = prompt_file_path
+        # 将所有 aliases 也映射到同一个 prompt 文件路径
+        for alias in trigger_config["aliases"]:
+            command_map[alias] = prompt_file_path
+    return command_map
+
+commandToPromptFilePath = build_command_to_prompt_map()
 
 # 创建命令处理器,响应白名单用户的私聊和群聊消息
 forward_ana_cmd = on_command(
     "ana",
-    aliases={"analyse", "蜻蜓队长", "正义", "天降正义", "裁判", "justice", "分析", "怎么说", "如何评价"},
+    aliases=get_all_aliases(),
     rule=Rule(check_user_permission),
     priority=1,
     block=False  # 不阻断消息传递,让其他插件也能处理
@@ -162,9 +201,11 @@ forward_ana_cmd = on_command(
 
 
 @forward_ana_cmd.handle()
-async def handle_ana_command(bot: Bot, event):
+async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...], Command()]):
     """处理正义裁判命令"""
     logger.info("=" * 50)
+
+    trigger = command[0]
 
     user_id = event.user_id
     message_id = event.message_id
@@ -290,9 +331,17 @@ async def handle_ana_command(bot: Bot, event):
             return
 
         # --- 决定并加载 system prompt ---
-        prompt_to_use_path = PROMPT_TEMPLATE_PATH  # 默认
+        # 优先使用 --prompt 参数指定的 prompt
+        # 否则根据触发命令从 commandToPromptFilePath 中获取对应的 prompt
+        prompt_to_use_path = None
         if custom_prompt_path and custom_prompt_path.exists():
             prompt_to_use_path = custom_prompt_path
+        elif trigger in commandToPromptFilePath:
+            prompt_to_use_path = commandToPromptFilePath[trigger]
+        else:
+            # 兜底使用默认 prompt
+            prompt_to_use_path = SYSTEM_PROMPT_ANA_PATH
+            logger.warning(f"触发命令 '{trigger}' 未在 commandToPromptFilePath 中找到,使用默认 prompt")
 
         def load_prompt_content(path: Path) -> str:
             """从指定路径加载并解析 prompt 内容"""
