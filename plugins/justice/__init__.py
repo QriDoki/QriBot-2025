@@ -295,10 +295,10 @@ async def handle_justice_command(bot: Bot, event):
         await justice_cmd.send(message=message)
 
         forward_content = event.reply.message[0].data.get("content")
-        replyCombineForwardMessages = extractListMessage(forward_content)
+        replyCombineForwardMessages = messageToSimple(forward_content)
 
         # 使用换行符拼接并打印
-        usersChatText = "\n".join(replyCombineForwardMessages)
+        usersChatText = json.dumps(replyCombineForwardMessages, ensure_ascii=False)
 
         # --- 决定并加载 system prompt ---
         prompt_to_use_path = PROMPT_TEMPLATE_PATH  # 默认
@@ -375,16 +375,28 @@ async def handle_justice_command(bot: Bot, event):
     finally:
         logger.info("=" * 50)
 
-def extractListMessage(messages: list) -> list:
+# def extractListMessage(messages: list) -> list:
+#     res = []
+#
+#     for i in messages:
+#         upperSender = i["sender"]["nickname"]
+#         for message in i["message"]:
+#             messageType = message["type"]
+#             if messageType == "forward":
+#                 res.extend(extractListMessage(message["data"]["content"]))
+#             if messageType == "text":
+#                 res.append(f"{upperSender}: {message['data']['text']}")
+#     return res
+
+def messageToSimple(messages: list) -> list:
     res = []
 
     for i in messages:
-
         upperSender = i["sender"]["nickname"]
         for message in i["message"]:
             messageType = message["type"]
             if messageType == "forward":
-                res.extend(extractListMessage(message["data"]["content"]))
+                res.append([upperSender, "合并转发", messageToSimple(message["data"]["content"])])
             if messageType == "text":
                 res.append(f"{upperSender}: {message['data']['text']}")
     return res
