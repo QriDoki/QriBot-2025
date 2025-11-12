@@ -22,9 +22,9 @@ from nonebot_plugin_htmlkit import md_to_pic, html_to_pic
 # 定义插件配置模型
 class PluginConfig(BaseModel):
     """插件配置"""
-    justice_user_id_allow_list: list[int] = Field(
+    ana_user_id_allow_list: list[int] = Field(
         default_factory=list,
-        alias="JUSTICE_USER_ID_ALLOW_LIST",
+        alias="ANA_USER_ID_ALLOW_LIST",
         description="允许使用正义裁判功能的用户ID白名单"
     )
     openai_api_key: Optional[str] = Field(
@@ -48,7 +48,7 @@ driver = get_driver()
 plugin_config = PluginConfig.model_validate(driver.config.model_dump(), extra="allow", by_alias=False, by_name=True)
 
 # 使用配置中的白名单
-JUSTICE_USER_ID_ALLOW_LIST = plugin_config.justice_user_id_allow_list
+ANA_USER_ID_ALLOW_LIST = plugin_config.ana_user_id_allow_list
 
 # 读取 prompt 模板
 PLUGIN_DIR = Path(__file__).parent
@@ -145,24 +145,24 @@ def check_user_permission(event) -> bool:
     if isinstance(event, (PrivateMessageEvent, GroupMessageEvent)):
         user_id = event.user_id
         # 如果白名单为空,拒绝所有请求
-        if not JUSTICE_USER_ID_ALLOW_LIST:
+        if not ANA_USER_ID_ALLOW_LIST:
             return False
-        return user_id in JUSTICE_USER_ID_ALLOW_LIST
+        return user_id in ANA_USER_ID_ALLOW_LIST
     return False
 
 
 # 创建命令处理器,响应白名单用户的私聊和群聊消息
-justice_cmd = on_command(
-    "justice",
-    aliases={"蜻蜓队长", "正义", "天降正义", "裁判"},
+forward_ana_cmd = on_command(
+    "ana",
+    aliases={"analyse", "蜻蜓队长", "正义", "天降正义", "裁判", "justice", "分析", "怎么说", "如何评价"},
     rule=Rule(check_user_permission),
     priority=1,
     block=False  # 不阻断消息传递,让其他插件也能处理
 )
 
 
-@justice_cmd.handle()
-async def handle_justice_command(bot: Bot, event):
+@forward_ana_cmd.handle()
+async def handle_ana_command(bot: Bot, event):
     """处理正义裁判命令"""
     logger.info("=" * 50)
 
@@ -172,9 +172,9 @@ async def handle_justice_command(bot: Bot, event):
     # 判断消息来源
     is_group = isinstance(event, GroupMessageEvent)
     if is_group:
-        logger.info(f"收到来自群 {event.group_id} 中用户 {user_id} 的justice请求")
+        logger.info(f"收到来自群 {event.group_id} 中用户 {user_id} 的ana请求")
     else:
-        logger.info(f"收到来自用户 {user_id} 的justice请求")
+        logger.info(f"收到来自用户 {user_id} 的ana请求")
     
     logger.info(f"消息ID: {message_id}")
     
@@ -194,7 +194,7 @@ async def handle_justice_command(bot: Bot, event):
                 if not md_files:
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text("未找到任何 prompt 文件")
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
                     return
                 combined_md = []
                 
@@ -214,17 +214,17 @@ async def handle_justice_command(bot: Bot, event):
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件:\n")
                     message += MessageSegment.image(pic)
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
                 except Exception as pic_error:
                     logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件，但生成图片失败\n\n{final_md[:500]}...")
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
             except Exception as e:
                 logger.opt(exception=True).error(f"处理 --prompts 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
-                await justice_cmd.send(message=message)
+                await forward_ana_cmd.send(message=message)
             logger.info("=" * 50)
             return
 
@@ -236,7 +236,7 @@ async def handle_justice_command(bot: Bot, event):
                 if not test_html_path.exists():
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text("未找到 test.html 文件")
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
                     return
                 
                 # 读取 HTML 文件内容
@@ -251,17 +251,17 @@ async def handle_justice_command(bot: Bot, event):
                     message += MessageSegment.text("test.html 渲染结果:\n")
                     message += MessageSegment.image(pic220)
                     message += MessageSegment.image(pic96)
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
                 except Exception as pic_error:
                     logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                     message = MessageSegment.reply(event.message_id)
                     message += MessageSegment.text(f"生成图片失败: {pic_error}")
-                    await justice_cmd.send(message=message)
+                    await forward_ana_cmd.send(message=message)
             except Exception as e:
                 logger.opt(exception=True).error(f"处理 --test-html 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
-                await justice_cmd.send(message=message)
+                await forward_ana_cmd.send(message=message)
             logger.info("=" * 50)
             return
 
@@ -286,19 +286,8 @@ async def handle_justice_command(bot: Bot, event):
                 and len(event.reply.message) > 0 and event.reply.message[0].type == "forward"):
             message = MessageSegment.reply(event.message_id)
             message += MessageSegment.text("请回复一条合并转发的消息\n如果超过100条 可以嵌套合并转发")
-            await justice_cmd.send(message=message)
+            await forward_ana_cmd.send(message=message)
             return
-        
-        # 先发送提示消息
-        message = MessageSegment.reply(event.message_id)
-        message += MessageSegment.text("LLM中, 请稍候\n(如果生成失败也会有回复)")
-        await justice_cmd.send(message=message)
-
-        forward_content = event.reply.message[0].data.get("content")
-        replyCombineForwardMessages = messageToSimple(forward_content)
-
-        # 使用换行符拼接并打印
-        usersChatText = json.dumps(replyCombineForwardMessages, ensure_ascii=False)
 
         # --- 决定并加载 system prompt ---
         prompt_to_use_path = PROMPT_TEMPLATE_PATH  # 默认
@@ -321,6 +310,26 @@ async def handle_justice_command(bot: Bot, event):
         prompt_filename = prompt_to_use_path.name
         logger.info(f"使用 prompt 文件: {prompt_filename}")
 
+        # 先发送提示消息和系统提示词图片
+        try:
+            # 将系统提示词转换为图片
+            prompt_pic = await md_to_pic(md=system_prompt, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
+            message = MessageSegment.reply(event.message_id)
+            message += MessageSegment.text(f"LLM中, 请稍候\n(如果生成失败也会有回复)\n\n使用的系统提示词 ({prompt_filename}):\n")
+            message += MessageSegment.image(prompt_pic)
+            await forward_ana_cmd.send(message=message)
+        except Exception as prompt_pic_error:
+            logger.opt(exception=True).error(f"生成系统提示词图片时发生错误: {prompt_pic_error}")
+            # 如果图片生成失败,发送纯文本提示
+            message = MessageSegment.reply(event.message_id)
+            message += MessageSegment.text(f"LLM中, 请稍候\n(如果生成失败也会有回复)\n使用prompt: {prompt_filename}")
+            await forward_ana_cmd.send(message=message)
+
+        forward_content = event.reply.message[0].data.get("content")
+        replyCombineForwardMessages = messageToSimple(forward_content)
+
+        # 使用换行符拼接并打印
+        usersChatText = json.dumps(replyCombineForwardMessages, ensure_ascii=False)
         # 调用 LLM 获取评价
         try:
             client = OpenAI(
@@ -356,20 +365,20 @@ async def handle_justice_command(bot: Bot, event):
                 message += MessageSegment.image(vertical_pic)
 
                 # 根据消息来源发送结果,并回复触发命令的消息
-                await justice_cmd.send(message=message)
+                await forward_ana_cmd.send(message=message)
             except Exception as pic_error:
                 logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
                 # 如果图片生成失败,发送纯文本
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(llm_result)
                 message += MessageSegment.text(f"\n(prompt: {prompt_filename})")
-                await justice_cmd.send(message=message)
+                await forward_ana_cmd.send(message=message)
 
         except Exception as llm_error:
             logger.opt(exception=True).error(f"调用 LLM 时发生错误: {llm_error}")
             error_msg = MessageSegment.reply(event.message_id)
             error_msg += MessageSegment.text(f"调用 LLM 时发生错误!")
-            await justice_cmd.send(message=error_msg)
+            await forward_ana_cmd.send(message=error_msg)
     except Exception as e:
         logger.opt(exception=True).error(f"处理消息时发生错误: {e}")
     finally:
