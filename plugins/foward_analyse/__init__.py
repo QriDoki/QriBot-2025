@@ -38,7 +38,7 @@ class PluginConfig(BaseModel):
     ana_user_id_allow_list: list[int] = Field(
         default_factory=list,
         alias="ANA_USER_ID_ALLOW_LIST",
-        description="允许使用正义裁判功能的用户ID白名单"
+        description="允许使用ana功能的用户ID白名单"
     )
     openai_api_key: Optional[str] = Field(
         default=None,
@@ -82,7 +82,7 @@ forward_ana_cmd = create_forward_ana_cmd(check_user_permission, plugin_config)
 
 @forward_ana_cmd.handle()
 async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...], Command()]):
-    """处理正义裁判命令"""
+    """处理ana命令"""
     logger.info("=" * 50)
 
     trigger = command[0]
@@ -130,56 +130,18 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
                         logger.opt(exception=True).error(f"读取文件 {md_file.name} 失败: {e}")
                         combined_md.append(f"## {md_file.name}\n\n读取失败: {e}")
                 final_md = "\n\n---\n\n".join(combined_md)
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件:\n")
                 try:
                     pic = await md_to_pic(md=final_md, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
-                    message = MessageSegment.reply(event.message_id)
-                    message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件:\n")
+                    
                     message += MessageSegment.image(pic)
-                    await forward_ana_cmd.send(message=message)
                 except Exception as pic_error:
                     logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
-                    message = MessageSegment.reply(event.message_id)
-                    message += MessageSegment.text(f"找到 {len(md_files)} 个 prompt 文件，但生成图片失败\n\n{final_md[:500]}...")
-                    await forward_ana_cmd.send(message=message)
+                    message += MessageSegment.text(f"但生成图片失败\n\n{final_md[:500]}...")
+                await forward_ana_cmd.send(message=message)
             except Exception as e:
                 logger.opt(exception=True).error(f"处理 --prompts 参数时发生错误: {e}")
-                message = MessageSegment.reply(event.message_id)
-                message += MessageSegment.text(f"处理失败: {e}")
-                await forward_ana_cmd.send(message=message)
-            logger.info("=" * 50)
-            return
-
-        # 检查 --test-html 参数
-        if "--test-html" in message_text:
-            logger.info("检测到 --test-html 参数，读取并转换 test.html")
-            try:
-                test_html_path = PLUGIN_DIR / "prompts" / "test.html"
-                if not test_html_path.exists():
-                    message = MessageSegment.reply(event.message_id)
-                    message += MessageSegment.text("未找到 test.html 文件")
-                    await forward_ana_cmd.send(message=message)
-                    return
-                
-                # 读取 HTML 文件内容
-                with open(test_html_path, "r", encoding="utf-8") as f:
-                    html_content = f.read()
-                
-                # 将 HTML 转换为图片
-                try:
-                    pic220 = await html_to_pic(html=html_content, max_width=1800, dpi=220)
-                    pic96 = await html_to_pic(html=html_content, max_width=800)
-                    message = MessageSegment.reply(event.message_id)
-                    message += MessageSegment.text("test.html 渲染结果:\n")
-                    message += MessageSegment.image(pic220)
-                    message += MessageSegment.image(pic96)
-                    await forward_ana_cmd.send(message=message)
-                except Exception as pic_error:
-                    logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
-                    message = MessageSegment.reply(event.message_id)
-                    message += MessageSegment.text(f"生成图片失败: {pic_error}")
-                    await forward_ana_cmd.send(message=message)
-            except Exception as e:
-                logger.opt(exception=True).error(f"处理 --test-html 参数时发生错误: {e}")
                 message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(f"处理失败: {e}")
                 await forward_ana_cmd.send(message=message)
@@ -227,20 +189,16 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
         prompt_filename = prompt_to_use_path.name
         logger.info(f"使用 prompt 文件: {prompt_filename}")
 
+        message = MessageSegment.reply(event.message_id)
+        message += MessageSegment.text(f"LLM中, 请稍候\n(如果生成失败也会有回复)\n\n使用的系统提示词 ({prompt_filename}):\n")
         # 先发送提示消息和系统提示词图片
         try:
             # 将系统提示词转换为图片
             prompt_pic = await md_to_pic(md=system_prompt, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
-            message = MessageSegment.reply(event.message_id)
-            message += MessageSegment.text(f"LLM中, 请稍候\n(如果生成失败也会有回复)\n\n使用的系统提示词 ({prompt_filename}):\n")
             message += MessageSegment.image(prompt_pic)
-            await forward_ana_cmd.send(message=message)
         except Exception as prompt_pic_error:
             logger.opt(exception=True).error(f"生成系统提示词图片时发生错误: {prompt_pic_error}")
-            # 如果图片生成失败,发送纯文本提示
-            message = MessageSegment.reply(event.message_id)
-            message += MessageSegment.text(f"LLM中, 请稍候\n(如果生成失败也会有回复)\n使用prompt: {prompt_filename}")
-            await forward_ana_cmd.send(message=message)
+        await forward_ana_cmd.send(message=message)
 
         forward_content = event.reply.message[0].data.get("content")
         replyCombineForwardMessages = messageToSimple(forward_content)
@@ -266,30 +224,16 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
             logger.success(f"LLM 评价结果: {llm_result}")
 
             # 生成横屏和竖屏两种格式的图片
+            # 构建消息
+            message = MessageSegment.reply(event.message_id)
+            message += MessageSegment.text(f"\n使用prompt文件: {prompt_filename}\n")
             try:
-                # 横屏格式 - 适合横屏阅读 (宽度较大)
-                # horizontal_pic = await md_to_pic(md=llm_result, max_width=1800, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
-
-                # 竖屏格式 - 适合竖屏阅读 (宽度较小)
                 vertical_pic = await md_to_pic(md=llm_result, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
-
-                # 构建消息
-                message = MessageSegment.reply(event.message_id)
-                # message += MessageSegment.text("适合横屏阅读:\n")
-                # message += MessageSegment.image(horizontal_pic)
-                # message += MessageSegment.text("\n适合竖屏阅读:\n")
-                message += MessageSegment.text(f"\n使用prompt文件: {prompt_filename}\n")
                 message += MessageSegment.image(vertical_pic)
-
-                # 根据消息来源发送结果,并回复触发命令的消息
-                await forward_ana_cmd.send(message=message)
             except Exception as pic_error:
                 logger.opt(exception=True).error(f"生成图片时发生错误: {pic_error}")
-                # 如果图片生成失败,发送纯文本
-                message = MessageSegment.reply(event.message_id)
                 message += MessageSegment.text(llm_result)
-                message += MessageSegment.text(f"\n(prompt: {prompt_filename})")
-                await forward_ana_cmd.send(message=message)
+            await forward_ana_cmd.send(message=message)
 
         except Exception as llm_error:
             logger.opt(exception=True).error(f"调用 LLM 时发生错误: {llm_error}")
