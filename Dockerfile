@@ -29,12 +29,13 @@ RUN mkdir -p /app/logs
 
 # 复制项目文件
 COPY pyproject.toml ./
-COPY bot.py ./
-COPY plugins/ ./plugins/
-COPY assets/ ./assets/
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -e .
+
+COPY bot.py ./
+COPY plugins/ ./plugins/
+COPY assets/ ./assets/
 
 # 设置环境变量 - 配置 fontconfig 使用系统字体
 ENV FONTCONFIG_PATH=/etc/fonts
