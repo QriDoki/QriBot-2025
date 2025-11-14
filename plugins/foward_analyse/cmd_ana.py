@@ -53,5 +53,5 @@ def create_forward_ana_cmd(check_permission_func, config):
         aliases=get_all_aliases(),
         rule=Rule(check_permission_func),
         priority=1,
-        block=False  # 不阻断消息传递,让其他插件也能处理
+        block=False
     )

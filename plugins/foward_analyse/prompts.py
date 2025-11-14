@@ -15,6 +15,7 @@ PLUGIN_DIR = Path(__file__).parent
 SYSTEM_PROMPT_JUSTICE_PATH = PLUGIN_DIR / "prompts" / "alignment_prompt.md"
 SYSTEM_PROMPT_ANA_PATH = PLUGIN_DIR / "prompts" / "how_to_say.md"
 SYSTEM_PROMPT_POV_PATH = PLUGIN_DIR / "prompts" / "pov.md"
+SYSTEM_PROMPT_BLANK_PATH = PLUGIN_DIR / "prompts" / "blank.md"
 EMPTY_CSS_PATH = PLUGIN_DIR / "empty.css"
 
 # 全局变量: alias -> 文件路径的映射字典
@@ -33,6 +34,10 @@ triggers = {
     "pov": {
         "promptFilePath": SYSTEM_PROMPT_POV_PATH,
         "aliases": ["观点"]
+    },
+    "blank": {
+        "promptFilePath": SYSTEM_PROMPT_POV_PATH,
+        "aliases": ["空白", "空提示词", "无", "无提示词"]
     }
 }
 

@@ -79,7 +79,6 @@ def check_user_permission(event) -> bool:
 # 创建命令处理器,响应白名单用户的私聊和群聊消息
 forward_ana_cmd = create_forward_ana_cmd(check_user_permission, plugin_config)
 
-
 @forward_ana_cmd.handle()
 async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...], Command()]):
     """处理ana命令"""
