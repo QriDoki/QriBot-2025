@@ -204,6 +204,9 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
 
         # 使用换行符拼接并打印
         usersChatText = json.dumps(replyCombineForwardMessages, ensure_ascii=False)
+        logger.info("=" * 25 + "对话内容" + "=" * 25)
+        logger.info(usersChatText)
+        logger.info("=" * 50)
         # 调用 LLM 获取评价
         try:
             client = OpenAI(
