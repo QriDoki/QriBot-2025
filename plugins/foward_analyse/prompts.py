@@ -25,7 +25,7 @@ PROMPT_ALIAS_MAP: Dict[str, str] = {}
 triggers = {
     "justice": {
         "promptFilePath": SYSTEM_PROMPT_JUSTICE_PATH,
-        "aliases": ["蜻蜓队长", "正义", "天降正义", "裁判"]
+        "aliases": ["蜻蜓队长", "正义", "天降正义", "裁判", "对线"]
     },
     "ana": {
         "promptFilePath": SYSTEM_PROMPT_ANA_PATH,

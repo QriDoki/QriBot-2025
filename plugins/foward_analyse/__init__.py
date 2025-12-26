@@ -40,6 +40,11 @@ class PluginConfig(BaseModel):
         alias="ANA_USER_ID_ALLOW_LIST",
         description="允许使用ana功能的用户ID白名单"
     )
+    ana_group_id_allow_list: list[int] = Field(
+        default_factory=list,
+        alias="ANA_GROUP_ID_ALLOW_LIST",
+        description="允许使用ana功能的群组ID白名单"
+    )
     openai_api_key: Optional[str] = Field(
         default=None,
         alias="OPENAI_API_KEY",
@@ -60,19 +65,32 @@ class PluginConfig(BaseModel):
 driver = get_driver()
 plugin_config = PluginConfig.model_validate(driver.config.model_dump(), extra="allow", by_alias=False, by_name=True)
 
-# 使用配置中的白名单
-ANA_USER_ID_ALLOW_LIST = plugin_config.ana_user_id_allow_list
+# 使用配置中的白名单，并转换为字符串列表
+ANA_USER_ID_ALLOW_LIST = [str(uid) for uid in plugin_config.ana_user_id_allow_list]
+ANA_GROUP_ID_ALLOW_LIST = [str(gid) for gid in plugin_config.ana_group_id_allow_list]
 
 
 def check_user_permission(event) -> bool:
     """检查用户是否在白名单中"""
     # 同时支持私聊和群聊
     if isinstance(event, (PrivateMessageEvent, GroupMessageEvent)):
-        user_id = event.user_id
-        # 如果白名单为空,拒绝所有请求
-        if not ANA_USER_ID_ALLOW_LIST:
+        user_id = str(event.user_id)
+        
+        # 检查用户ID白名单
+        if ANA_USER_ID_ALLOW_LIST and user_id in ANA_USER_ID_ALLOW_LIST:
+            return True
+        
+        # 检查群组ID白名单（仅对群消息）
+        if isinstance(event, GroupMessageEvent):
+            group_id = str(event.group_id)
+            if ANA_GROUP_ID_ALLOW_LIST and group_id in ANA_GROUP_ID_ALLOW_LIST:
+                return True
+        
+        # 如果两个白名单都为空，拒绝所有请求
+        if not ANA_USER_ID_ALLOW_LIST and not ANA_GROUP_ID_ALLOW_LIST:
             return False
-        return user_id in ANA_USER_ID_ALLOW_LIST
+            
+        return False
     return False
 
 
@@ -99,8 +117,27 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
     logger.info(f"消息ID: {message_id}")
     
     try:
-        # 检查是否包含 --prompts 或 --prompt=xxx 参数
+        # 检查是否包含 --help 参数
         message_text = event.get_plaintext().strip()
+        if "--help" in message_text:
+            logger.info("检测到 --help 参数，显示帮助信息")
+            try:
+                help_file_path = PLUGIN_DIR / "help.txt"
+                with open(help_file_path, "r", encoding="utf-8") as f:
+                    help_text = f.read()
+                
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text(help_text)
+                await forward_ana_cmd.send(message=message)
+            except Exception as help_error:
+                logger.opt(exception=True).error(f"读取帮助文件时发生错误: {help_error}")
+                message = MessageSegment.reply(event.message_id)
+                message += MessageSegment.text("读取帮助文件失败")
+                await forward_ana_cmd.send(message=message)
+            logger.info("=" * 50)
+            return
+        
+        # 检查是否包含 --prompts 或 --prompt=xxx 参数
         if "--prompts" in message_text:
             logger.info("检测到 --prompts 参数，刷新并读取所有 prompt 文件")
             
@@ -185,6 +222,12 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
             logger.warning(f"触发命令 '{trigger}' 未在 commandToPromptFilePath 中找到,使用默认 prompt")
 
         system_prompt = load_prompt_content(prompt_to_use_path)
+        
+        # 检查是否有 --short 参数，如果有则添加简短回复提示
+        if "--short" in message_text:
+            system_prompt += "\n⭐⭐**请用较短的篇幅回复**⭐⭐"
+            logger.info("检测到 --short 参数，已添加简短回复提示")
+        
         prompt_filename = prompt_to_use_path.name
         logger.info(f"使用 prompt 文件: {prompt_filename}")
 
