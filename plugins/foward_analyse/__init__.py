@@ -122,12 +122,28 @@ async def handle_ana_command(bot: Bot, event, command: Annotated[tuple[str, ...]
         if "--help" in message_text:
             logger.info("检测到 --help 参数，显示帮助信息")
             try:
-                help_file_path = PLUGIN_DIR / "help.txt"
-                with open(help_file_path, "r", encoding="utf-8") as f:
-                    help_text = f.read()
+                # 获取所有可用的命令别名
+                from .cmd_ana import get_all_aliases
+                all_aliases = get_all_aliases()
+                aliases_str = ", ".join(sorted(all_aliases))
                 
+                # 读取帮助文件
+                help_file_path = PLUGIN_DIR / "help.md"
+                with open(help_file_path, "r", encoding="utf-8") as f:
+                    help_md = f.read()
+                
+                # 在最上面添加可用命令前缀
+                help_content = f"**可用命令前缀**: {aliases_str}\n\n---\n\n{help_md}"
+                
+                # 使用图片形式渲染md回复
                 message = MessageSegment.reply(event.message_id)
-                message += MessageSegment.text(help_text)
+                try:
+                    help_pic = await md_to_pic(md=help_content, max_width=900, dpi=220, allow_refit=False, css_path=EMPTY_CSS_PATH)
+                    message += MessageSegment.image(help_pic)
+                except Exception as pic_error:
+                    logger.opt(exception=True).error(f"生成帮助图片时发生错误: {pic_error}")
+                    message += MessageSegment.text(help_content)
+                
                 await forward_ana_cmd.send(message=message)
             except Exception as help_error:
                 logger.opt(exception=True).error(f"读取帮助文件时发生错误: {help_error}")
